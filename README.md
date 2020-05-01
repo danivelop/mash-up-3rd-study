@@ -219,17 +219,68 @@ function MyPage () {
 React는 렌더링을 할 때 마다 이러한 과정으로 Virtual DOM을 생성하고 이전에 생성된 Virtual DOM과 비교하여 변경된 부분을 찾아냅니다. 그럼, React는 어떻게 변경된 부분을 찾아내는지 보겠습니다.
 
 ## React 리렌더링
-React에서 리렌더링이 일어나는 경우는 크게 3가지가 있습니다. (이 외에도 더 있지만 이 글에서는 3가지만 다루겠습니다.)
+### 컴포넌트의 업데이트
+React에서 리렌더링이 일어나는 경우는 크게 3가지가 있습니다. (이 외에도 더 있지만 글에서는 3가지만 다루겠습니다.)
 
-- 부모 컴포넌트가 리렌더링 된 경우
 - 컴포넌트의 `state`가 변경된 경우
 - 컴포넌트의 `props`가 변경된 경우
+- 부모 컴포넌트가 리렌더링 된 경우
 
-위의 [예제코드](#code-example)에서 
+그리고 React에서 컴포넌트의 업데이트는 2가지 단계로 나뉩니다.
 
-객체의 불변성
+- 렌더단계 : 실제 DOM에 반영하기 전, 변경사항을 파악하는 단계
+- 커밋단계 : 렌더단계에서 파악된 변경사항을 실제 DOM에 반영하는 단계
 
-렌더단계
-커밋단계
+위의 [예제코드](#code-example)에서 '이름 변경' 버튼을 클릭할 경우, 렌더링 관련하여 어떤 일이 일어나는지 살펴보겠습니다. '이름 변경' 버튼을 클릭하면 `handleChangeName`함수가 호출되고 `setName`함수에 의해 `MyPage`컴포넌트의 상탯값이 변경됩니다. 상탯값이 변경됐으니 `MyPage`컴포넌트는 리렌더링을 하게 됩니다. 이렇게 되면 자식 컴포넌트인 `Color`, `Button` 컴포넌트도 함께 리렌더링을 하게 됩니다.
 
-useCallback, React.memo
+여기서 중요한 점은 `Color`컴포넌트는 먼저 렌더단계를 거치게 되는데 렌더단계에서는 `Color`컴포넌트에 대한 Virtual DOM을 다시 만들게 되고 이를 이전에 만들어진 Virtual DOM과 비교합니다. 하지만, 위의  [예제코드](#code-example)에서는 `name`을 변경해도 `color`는 바뀌지 않기 때문에 결국 `Color`컴포넌트의 `props`로 전달된 `color`는 바뀌지 않습니다. 즉, `Color`컴포넌트는 실제로 변경된 사항이 없으니 렌더단계는 거치더라도 커밋단계에서는 하는일이 없게 됩니다.
+
+위의 내용을 정리해 보겠습니다.
+
+1. '이름 변경' 버튼을 클릭한다.
+2. `MyPage`컴포넌트의 상태가 변하고 리렌더링 된다.
+3. 자식 컴포넌트인 `Color`, `Button` 컴포넌트도 리렌더링을 한다.
+4. `Color`컴포넌트는 Virtual DOM을 만들고 이전값과 비교하는 렌더단계를 거친다.
+5. 실제로 변경된 사항은 없으므로 커밋단계에서는 업데이트 비용이 들지 않는다.
+
+React는 렌더단계에서 Virtual DOM을 만들고 이전에 생성한 Virtual DOM과 실제 변경사항을 파악한다고 했는데 React는 어떻게 변경사항을 효율적으로 파악할까요? 여기서 객체의 불변성이라는 개념이 등장합니다.
+
+### 객체의 불변성 & 최적화
+`Color`컴포넌트의 변경사항을 파악하기 위해서는 `Color`컴포넌트가 렌더단계를 거치며 새로 전달된 `props`를 이전에 존재했던 `props`와 비교해야 하는데 위의 [예제코드](#code-example)에서는 `color`라는 단순 문자열데이터만 `props`로 전달되었기 때문에 `prevProps.color === nextProps.color`와 같이 단순 비교로 실제로 변경되었는지 알 수 있습니다.
+
+하지만, 만약 `Color`컴포넌트로 전달된 속성인 `color`가 문자열이 아닌 객체와 같은 참조타입 이었다면 어떻게 됐을까요? 예를 한번 들어보겠습니다.
+
+```javascript
+const [colors, setColors] = useState(['Skyblue', 'White', 'Rosegold']);
+
+//1번
+onClick1 = () => {
+  colors.push('red');
+  setColors(colors);
+}
+
+//2번
+onClick2 = () => {
+  const newColors = [...colors, 'red'];
+  setColors(newColors);
+}
+```
+
+위의 예시에서 1번에서는 `colors`내부의 데이터가 실제로 변경되었는지 파악하기 위해선 `colors`의 모든 인덱스를 검사해야 합니다. `colors`안의 인덱스가 100만개라면 100만번 검사해야 하지요. 하지만 2번에서는 `prevColors === nextColors`와 같이 한번의 연산만으로 검사가 가능합니다. 이와 같은 이유로 React는 객체, 배열과 같은 참조타입은 데이터 변경시 단순 변경이 아닌 새로운 객체를 할당하여 불변성을 유지합니다.
+
+이렇게 불변성을 유지하게 되면 
+```javascript
+const prevProps = {
+  names: ['Daniel', 'Sam', 'Mike'],
+  colors: ['Skyblue', 'White', 'Rosegold']
+}
+const nextProps = {
+  names: ['Daniel', 'Sam', 'Mike'],
+  colors: ['Skyblue', 'White', 'Rosegold', 'red']
+}
+```
+에서 
+
+객체, 배열, 함수 등은 참조타입이기 때문에 내부의 속성값 하나를 변경하여도 `prevObject === nextObject`는 `true`가 됩니다. 결국, 변경사항을 파악하기 위해서는 객체 내부의 
+
+'이름 변경' 버튼을 클릭하여 `name`이 변경되서 `Color`컴포넌트가 렌더단계는 거치더라도 실제 DOM에는 반영을 하지 않으므로 성능에 큰 문제는 없습니다. 하지만, 만약 `Color`컴포넌트가 엄청 복잡한 컴포넌트라서 Virtual DOM을
