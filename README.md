@@ -1,7 +1,8 @@
 # React의 렌더링 과정
 React를 사용해 개발을 하다보면 한 컴포넌트가 렌더링을 연속으로 여러번 하거나, 결과가 의도치 않게 나오는 경우가 종종 있습니다. 혹은, 최적화 등 성능적으로 고민해야 할 때도 있습니다. 저도 처음에는 단순히 React의 사용법만 익히고 개발했지만 위와 같은 경우를 겪었을 때, 해결하기 위해선 React가 어떻게 렌더링되고 DOM의 변경을 최소화 하는지 등 더 깊게 알아야 했습니다.
 그래서 React의 렌더링 과정과 virtual DOM이 어떻게 동작하는지 공부한 것들을 정리했습니다.
-혹시 틀린 내용이나 수정할 부분이 있으면 언제든지 말씀해 주세요.
+
+> 혹시 틀린 내용이나 수정할 부분이 있으면 언제든지 말씀해 주세요.
 
 ### Table of contents
 - [React element](#react-element)
@@ -21,7 +22,6 @@ react-rendering-process
     ├── MyPage.js
     ├── Color.js
     └── Button.js
-
 ```
 
 ```javascript
@@ -172,8 +172,6 @@ function MyPage () {
 하지만, 아직 Virtual DOM을 완성하지 못했습니다. React가 Virtual DOM을 통해 실제 DOM을 생성하기 위해서는 Virtual DOM의 모든 `type`이 문자열 즉, html태그여야 합니다. 하지만, 위의 예시에서는 아직 `type`에 `Color`와 `Button`이 남아있습니다. 이들 모두 컴포넌트이기 때문에 functional 컴포넌트라면 그대로 호출하고 class 컴포넌트라면 `render`함수를 호출하여 해당 컴포넌트의 렌더링에 대한 정보를 얻을 수 있습니다. 이 과정을 통해 최종적으로 완성된 Virtual DOM은 다음과 같습니다.
 
 ```javascript
-<p>제가 가장 좋아하는 색은 {color} 입니다.</p>
-<button  onClick={onClick}>색상 변경</button>
 {
   type: 'div',
   key: null,
@@ -243,10 +241,93 @@ React에서 리렌더링이 일어나는 경우는 크게 3가지가 있습니�
 4. `Color`컴포넌트는 Virtual DOM을 만들고 이전값과 비교하는 렌더단계를 거친다.
 5. 실제로 변경된 사항은 없으므로 커밋단계에서는 업데이트 비용이 들지 않는다.
 
-React는 렌더단계에서 Virtual DOM을 만들고 이전에 생성한 Virtual DOM과 실제 변경사항을 파악한다고 했는데 React는 어떻게 변경사항을 효율적으로 파악할까요? 여기서 객체의 불변성이라는 개념이 등장합니다.
+### 최적화
+'이름 변경' 버튼을 클릭하여 `name`이 변경됨으로 인해 `Color`컴포넌트가 렌더단계는 거치더라도 실제 DOM에는 반영을 하지 않으므로 성능에 큰 문제는 없습니다. 하지만, 만약 `Color`컴포넌트가 매우 복잡한 컴포넌트라서 Virtual DOM을 생성하고 이전에 생성된 Virtual DOM과 비교하는 작업도 비용이 많이 들어갈 수 있습니다. 이 때, `props`가 변하지 않았다면 이런 과정도 생략을 해줄 수 있습니다.
 
-### 객체의 불변성 & 최적화
-`Color`컴포넌트의 변경사항을 파악하기 위해서는 `Color`컴포넌트가 렌더단계를 거치며 새로 전달된 `props`를 이전에 존재했던 `props`와 비교해야 하는데 위의 [예제코드](#code-example)에서는 `color`라는 단순 문자열데이터만 `props`로 전달되었기 때문에 `prevProps.color === nextProps.color`와 같이 단순 비교로 실제로 변경되었는지 알 수 있습니다.
+```javascript
+...
+
+function MyPage () {
+  ...
+}
+
+export default React.memo(MyPage);
+```
+
+```javascript
+import React from 'react';
+
+class MyPage extends React.PureComponent {
+  ...
+}
+
+export default MyPage;
+```
+
+위의 코드와 같이 functional 컴포넌트에서는 `React.memo`사용하거나 class 컴포넌트에서는 `React.PureComponent`를 상속받게 되면 해당 컴포넌트의 `props`가 변경되지 않았다면 더 이상 렌더링을 진행하지 않습니다. 다시 말해, '이름 변경' 버튼을 클릭하여 `MyPage`컴포넌트가 리렌더링 되어도 `Color`컴포넌트의 `props`로 전달되는 `color`는 변하지 않았으므로 `Color`컴포넌트는 렌더링 단계를 거치지 않습니다.
+
+하지만, 아직 한가지 더 신경 써줘야 할 부분이 있습니다.
+
+```javascript
+import React from 'react';
+
+class MyPage extends React.Component {
+  ...
+  
+  handleChangeName = () => { ... };
+  handleChangeColor = () => { ... };
+  
+  render () {
+    ...
+  }
+}
+```
+
+```javascript
+import React from 'react';
+
+function MyPage () {
+  ...
+  
+  const handleChangeName = () => { ... };
+  const handleChangeColor = () => { ... };
+  
+  return (
+    ...
+  )
+}
+```
+
+class 컴포넌트는 초기 생성될 때 인스턴스 형태로 생성되기 때문에 리렌더링 되는 경우에도 class 내부의 `render`함수만 다시 호출할 뿐입니다. 즉, 멤버함수인 `handleChangeName`와 `handleChangeColor`는 리렌더링시에도 다시 재할당되지 않습니다. 하지만 functional 컴포넌트는  리렌더링 되면 컴포넌트 자체를 호출하기 때문에 `handleChangeName`와 `handleChangeColor`가 매번 재할당 됩니다. 따라서, `MyPage`컴포넌트가 리렌더링 될 때마다 `Button`컴포넌트의 `props`로 전달되는 `handleChangeColor`가 재할당 되기 때문에 `Button`컴포넌트는 불필요하게 렌더단계를 거치게 됩니다.
+
+이렇게 functional 컴포넌트에서 매번 함수가 새로 할당되는 경우를 막기 위해 React에서는 `useCallback` hooks를 제공합니다.
+
+```javascript
+import React, { useCallback } from 'react';
+
+function MyPage () {
+  ...
+
+  const handleChangeName = useCallback(() => {
+    ...
+  }, []);
+  
+  const handleChangeColor = useCallback(() => {
+    ...
+  }, []);
+
+  ...
+}
+
+...
+```
+
+`useCallback`은 2번째 인자로 넣어준 배열안의 데이터가 변경되지 않았다면 함수를 새로 생성하지 않고 이전에 있던 값을 재사용 합니다. 따라서 '이름 변경' 버튼클 클릭해 `MyPage`컴포넌트가 리렌더링 되도 `handleChangeColor`는 초기에 할당 되었던 값 그대로 재사용되므로 `Button`컴포넌트도 렌더링 단계를 거치지 않게 됩니다.
+
+> React는 이렇게 `props`가 실제로 변경되었는지에 따라 렌더링 과정이 달라지는데 위의 예시에서도 `React.memo`를 통해 `props`가 변경되지 않았다면 렌더링 과정을 진행하지 않는것을 보았습니다. 그럼 React는 어떻게 변경사항을 효율적으로 파악할까요? 여기서 객체의 불변성이라는 개념이 등장합니다.
+
+### 객체의 불변성
+`Color`컴포넌트의 변경사항을 파악하기 위해서는 `Color`컴포넌트가 렌더단계를 거치며 새로 전달된 `props`를 이전에 존재했던 `props`와 비교해야 하는데 위의 [예제코드](#code-example)에서는 `props`로 전달된 `color`가 단순 문자열이기 때문에 `prevProps.color === nextProps.color`와 같이 단순 비교로 실제로 변경되었는지 알 수 있습니다.
 
 하지만, 만약 `Color`컴포넌트로 전달된 속성인 `color`가 문자열이 아닌 객체와 같은 참조타입 이었다면 어떻게 됐을까요? 예를 한번 들어보겠습니다.
 
@@ -266,7 +347,7 @@ onClick2 = () => {
 }
 ```
 
-위의 예시에서 1번에서는 `colors`내부의 데이터가 실제로 변경되었는지 파악하기 위해선 `colors`의 모든 인덱스를 검사해야 합니다. `colors`안의 인덱스가 100만개라면 100만번 검사해야 하지요. 하지만 2번에서는 `prevColors === nextColors`와 같이 한번의 연산만으로 검사가 가능합니다. 이와 같은 이유로 React는 객체, 배열과 같은 참조타입은 데이터 변경시 단순 변경이 아닌 새로운 객체를 할당하여 불변성을 유지합니다.
+위의 예시에서 1번에서는 `colors`내부의 데이터가 실제로 변경되었는지 파악하기 위해선 `colors`의 모든 인덱스를 검사해야 합니다. `colors`안의 인덱스가 100만개라면 100만번 검사해야 하죠. 하지만 2번에서는 `prevColors === nextColors`와 같이 한번의 연산만으로 검사가 가능합니다. 이와 같은 이유로 React는 객체, 배열과 같은 참조타입은 데이터 변경시 새로운 객체를 할당하여 불변성을 유지합니다.
 
 이렇게 불변성을 유지하게 되면 
 ```javascript
@@ -279,8 +360,9 @@ const nextProps = {
   colors: ['Skyblue', 'White', 'Rosegold', 'red']
 }
 ```
-에서 
 
-객체, 배열, 함수 등은 참조타입이기 때문에 내부의 속성값 하나를 변경하여도 `prevObject === nextObject`는 `true`가 됩니다. 결국, 변경사항을 파악하기 위해서는 객체 내부의 
+와 같이 `props` 객체에 직접 연결(1-depth)되 있는 값들만 단순비교하면 `props`의 변경 여부를 알 수 있습니다.
 
-'이름 변경' 버튼을 클릭하여 `name`이 변경되서 `Color`컴포넌트가 렌더단계는 거치더라도 실제 DOM에는 반영을 하지 않으므로 성능에 큰 문제는 없습니다. 하지만, 만약 `Color`컴포넌트가 엄청 복잡한 컴포넌트라서 Virtual DOM을
+---
+
+이렇게 React가 어떤 과정을 통해 렌더링 되고 어떻게 효율적이고 최소한으로 렌더링을 하는지 정리했습니다. React는 이 외에도 서비스를 효율적으로 만들기 위해 더 다양한 방법들을 많이 제공하지만 이 글에서 다룬 가장 기초가 되는 개념들을 알고 있다면 React의 더 깊은 개념을 학습하는데 조금 더 수월할 거라고 생각합니다.
